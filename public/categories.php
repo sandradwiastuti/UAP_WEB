@@ -5,155 +5,462 @@ require '../config/database.php';
 $page_title = 'Categories';
 $user_id = $_SESSION['user_id'];
 
-// Default action is to list categories
 $action = $_GET['action'] ?? 'list';
 $category_id = $_GET['id'] ?? null;
 $error = '';
 $success = '';
 
-// Handle POST requests for adding/editing categories
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $name = trim($_POST['name']);
     $type = $_POST['type'];
 
     if (empty($name) || empty($type)) {
-        $error = 'Category name and type are required.';
+        $error = 'Nama kategori dan jenis wajib diisi.';
     } else {
         if ($action == 'add') {
             try {
                 $stmt = $pdo->prepare("INSERT INTO categories (user_id, name, type) VALUES (?, ?, ?)");
                 $stmt->execute([$user_id, $name, $type]);
-                $success = 'Category added successfully!';
+                $_SESSION['success_message'] = 'Kategori berhasil ditambahkan!';
             } catch (PDOException $e) {
-                $error = 'An error occurred while adding the category.';
+                $_SESSION['error_message'] = 'Terjadi kesalahan saat menambahkan kategori.';
             }
         } elseif ($action == 'edit' && $category_id) {
             try {
-                // Verify the category belongs to the user before updating
                 $stmt = $pdo->prepare("UPDATE categories SET name = ?, type = ? WHERE id = ? AND user_id = ?");
                 $stmt->execute([$name, $type, $category_id, $user_id]);
-                $success = 'Category updated successfully!';
+                $_SESSION['success_message'] = 'Kategori berhasil diperbarui!';
             } catch (PDOException $e) {
-                $error = 'An error occurred while updating the category.';
+                $_SESSION['error_message'] = 'Terjadi kesalahan saat memperbarui kategori.';
             }
         }
-        // Redirect to the list view after a short delay to show the message
         header("Location: categories.php");
         exit();
     }
 }
 
-// Handle delete requests
 if ($action == 'delete' && $category_id) {
-    // Verify the category belongs to the user before deleting
-    $stmt = $pdo->prepare("DELETE FROM categories WHERE id = ? AND user_id = ?");
-    $stmt->execute([$category_id, $user_id]);
+    try {
+        $stmt = $pdo->prepare("DELETE FROM categories WHERE id = ? AND user_id = ?");
+        $stmt->execute([$category_id, $user_id]);
+        $_SESSION['success_message'] = 'Kategori berhasil dihapus!';
+    } catch (PDOException $e) {
+        $_SESSION['error_message'] = 'Tidak dapat menghapus kategori karena memiliki transaksi terkait.';
+    }
     header("Location: categories.php");
     exit();
 }
 
 include '../includes/header.php';
-
-// Display form for adding or editing
-if ($action == 'add' || $action == 'edit') :
-    $current_category = null;
-    if ($action == 'edit' && $category_id) {
-        $stmt = $pdo->prepare("SELECT * FROM categories WHERE id = ? AND user_id = ?");
-        $stmt->execute([$category_id, $user_id]);
-        $current_category = $stmt->fetch();
-        if (!$current_category) {
-            // Category not found or doesn't belong to the user
-            die('Error: Category not found.');
-        }
-    }
 ?>
-    <div class="card shadow-sm">
-        <div class="card-header">
-            <h3 class="mb-0"><?= ucfirst($action) ?> Category</h3>
+<style>
+    .category-card {
+        border: 1px solid #e0e0e0;
+        border-radius: 0.5rem;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .category-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+    }
+    .category-card .card-header {
+        background-color: #dc3545; /* Red header */
+        color: white;
+        font-weight: bold;
+        border-top-left-radius: calc(0.5rem - 1px);
+        border-top-right-radius: calc(0.5rem - 1px);
+    }
+    .category-card .card-title {
+        font-size: 1.25rem;
+        margin-bottom: 0;
+    }
+    .category-card .card-body {
+        background-color: #ffffff; /* White body */
+    }
+    .category-card .card-footer {
+        background-color: #f8f9fa; /* Light grey footer */
+        border-top: 1px solid #e0e0e0;
+    }
+    .category-card .btn-warning {
+        background-color: #ffc107;
+        border-color: #ffc107;
+        color: #212529;
+    }
+    .category-card .btn-danger {
+        background-color: #dc3545;
+        border-color: #dc3545;
+        color: #fff;
+    }
+    .category-card .btn-danger:hover {
+        background-color: #c82333;
+        border-color: #bd2130;
+    }
+    .btn-add-category {
+        background-color: #dc3545;
+        border-color: #dc3545;
+        color: #fff;
+        transition: background-color 0.3s ease, border-color 0.3s ease;
+    }
+
+    .btn-add-category:hover {
+        background-color: #c82333;
+        border-color: #bd2130;
+        color: #fff;
+    }
+
+    /* Modal styling to match theme */
+    .modal-header {
+        background-color: #dc3545;
+        color: white;
+        border-bottom: none;
+    }
+    .modal-header .btn-close {
+        filter: invert(1) grayscale(100%) brightness(200%);
+    }
+    .modal-footer .btn-primary {
+        background-color: #dc3545;
+        border-color: #dc3545;
+    }
+    .modal-footer .btn-primary:hover {
+        background-color: #c82333;
+        border-color: #bd2130;
+    }
+    .table-light {
+        background-color: #f8d7da !important;
+        background: linear-gradient(to right, #ffffff, #f8d7da) !important;
+    }
+
+    .table-light th {
+        color: #842029 !important;
+        border-color: #dc3545 !important;
+    }
+    .table-hover tbody tr:nth-child(odd) {
+        background-color: #ffffff;
+    }
+
+    .table-hover tbody tr:nth-child(even) {
+        background-color: #ffeaea;
+    }
+
+    .table-hover tbody tr:hover {
+        background-color: #f5c2c7;
+    }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="dashboard-title">Manage Categories</h1>
+    <button type="button" class="btn btn-primary btn-add-category" data-bs-toggle="modal" data-bs-target="#addCategoryModal">
+        <i class="fas fa-plus-circle me-2"></i>Tambah Kategori Baru
+    </button>
+</div>
+
+<?php if (isset($_SESSION['error_message'])) : ?>
+    <div class="alert alert-danger"><?= htmlspecialchars($_SESSION['error_message']) ?></div>
+    <?php unset($_SESSION['error_message']); ?>
+<?php endif; ?>
+<?php if (isset($_SESSION['success_message'])) : ?>
+    <div class="alert alert-success"><?= htmlspecialchars($_SESSION['success_message']) ?></div>
+    <?php unset($_SESSION['success_message']); ?>
+<?php endif; ?>
+
+<?php
+$records_per_page = 5;
+
+$income_sort_by = $_GET['income_sort_by'] ?? 'name';
+$income_sort_dir = $_GET['income_sort_dir'] ?? 'ASC';
+$income_page = isset($_GET['income_page']) && is_numeric($_GET['income_page']) ? (int)$_GET['income_page'] : 1;
+
+$stmt_total_income = $pdo->prepare("SELECT COUNT(*) FROM categories WHERE user_id = ? AND type = 'income'");
+$stmt_total_income->execute([$user_id]);
+$total_income_categories = $stmt_total_income->fetchColumn();
+$total_income_pages = ceil($total_income_categories / $records_per_page);
+if ($income_page < 1) $income_page = 1;
+if ($income_page > $total_income_pages && $total_income_pages > 0) $income_page = $total_income_pages;
+$income_offset = ($income_page - 1) * $records_per_page;
+
+$stmt_income = $pdo->prepare("SELECT id, name FROM categories WHERE user_id = ? AND type = 'income' ORDER BY {$income_sort_by} {$income_sort_dir} LIMIT ? OFFSET ?");
+$stmt_income->execute([$user_id, $records_per_page, $income_offset]);
+$income_categories = $stmt_income->fetchAll();
+
+$expense_sort_by = $_GET['expense_sort_by'] ?? 'name';
+$expense_sort_dir = $_GET['expense_sort_dir'] ?? 'ASC';
+$expense_page = isset($_GET['expense_page']) && is_numeric($_GET['expense_page']) ? (int)$_GET['expense_page'] : 1;
+
+$stmt_total_expense = $pdo->prepare("SELECT COUNT(*) FROM categories WHERE user_id = ? AND type = 'expense'");
+$stmt_total_expense->execute([$user_id]);
+$total_expense_categories = $stmt_total_expense->fetchColumn();
+$total_expense_pages = ceil($total_expense_categories / $records_per_page);
+if ($expense_page < 1) $expense_page = 1;
+if ($expense_page > $total_expense_pages && $total_expense_pages > 0) $expense_page = $total_expense_pages;
+$expense_offset = ($expense_page - 1) * $records_per_page;
+
+$stmt_expense = $pdo->prepare("SELECT id, name FROM categories WHERE user_id = ? AND type = 'expense' ORDER BY {$expense_sort_by} {$expense_sort_dir} LIMIT ? OFFSET ?");
+$stmt_expense->execute([$user_id, $records_per_page, $expense_offset]);
+$expense_categories = $stmt_expense->fetchAll();
+?>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">Kategori Pemasukan</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col" class="text-nowrap">
+                                <a href="?action=list&income_sort_by=name&income_sort_dir=<?= ($income_sort_by === 'name' && $income_sort_dir === 'ASC') ? 'DESC' : 'ASC' ?>&income_page=1" class="text-decoration-none text-dark">
+                                    Nama
+                                    <?php if ($income_sort_by === 'name') : ?>
+                                        <?= $income_sort_dir === 'ASC' ? ' &#9650;' : ' &#9660;' ?>
+                                    <?php endif; ?>
+                                </a>
+                            </th>
+                            <th scope="col" class="text-end">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (count($income_categories) > 0) : ?>
+                            <?php foreach ($income_categories as $category) : ?>
+                                <tr>
+                                    <td><?= htmlspecialchars($category['name']) ?></td>
+                                    <td class="text-end">
+                                        <button type="button" class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#editCategoryModal" 
+                                            data-id="<?= $category['id'] ?>" 
+                                            data-name="<?= htmlspecialchars($category['name']) ?>" 
+                                            data-type="income">
+                                            <i class="fas fa-edit me-1"></i>Ubah
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#deleteConfirmModal" data-id="<?= $category['id'] ?>">
+                                            <i class="fas fa-trash me-1"></i>Hapus
+                                        </button>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php else : ?>
+                            <tr>
+                                <td colspan="2" class="text-center">Tidak ada kategori pemasukan ditemukan.</td>
+                            </tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer d-flex justify-content-between align-items-center flex-wrap">
+                <nav class="mb-2 mb-md-0">
+                    <ul class="pagination mb-0">
+                        <li class="page-item <?= $income_page <= 1 ? 'disabled' : '' ?>">
+                            <a class="page-link" href="?action=list&income_page=<?= $income_page - 1 ?>&income_sort_by=<?= $income_sort_by ?>&income_sort_dir=<?= $income_sort_dir ?>">Sebelumnya</a>
+                        </li>
+                        <?php for ($i = 1; $i <= $total_income_pages; $i++) : ?>
+                            <li class="page-item <?= $i == $income_page ? 'active' : '' ?>">
+                                <a class="page-link" href="?action=list&income_page=<?= $i ?>&income_sort_by=<?= $income_sort_by ?>&income_sort_dir=<?= $income_sort_dir ?>"><?= $i ?></a>
+                            </li>
+                        <?php endfor; ?>
+                        <li class="page-item <?= $income_page >= $total_income_pages ? 'disabled' : '' ?>">
+                            <a class="page-link" href="?action=list&income_page=<?= $income_page + 1 ?>&income_sort_by=<?= $income_sort_by ?>&income_sort_dir=<?= $income_sort_dir ?>">Selanjutnya</a>
+                        </li>
+                    </ul>
+                </nav>
+                <form method="GET" action="categories.php" class="d-flex align-items-center">
+                    <input type="hidden" name="action" value="list">
+                    <input type="hidden" name="income_sort_by" value="<?= $income_sort_by ?>">
+                    <input type="hidden" name="income_sort_dir" value="<?= $income_sort_dir ?>">
+                    <label for="income_jump_page" class="form-label me-2 mb-0">Lompat ke halaman:</label>
+                    <input type="number" id="income_jump_page" name="income_page" class="form-control text-center me-2" style="width: 80px;" min="1" max="<?= max(1, $total_income_pages) ?>" value="<?= $income_page ?>">
+                    <button type="submit" class="btn btn-sm btn-secondary">Go</button>
+                </form>
+            </div>
         </div>
-        <div class="card-body">
-            <form action="categories.php?action=<?= $action ?><?= $category_id ? '&id=' . $category_id : '' ?>" method="post">
-                <div class="mb-3">
-                    <label for="name" class="form-label">Category Name</label>
-                    <input type="text" class="form-control" id="name" name="name" value="<?= htmlspecialchars($current_category['name'] ?? '') ?>" required>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-danger text-white">
+                <h5 class="mb-0">Kategori Pengeluaran</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col" class="text-nowrap">
+                                <a href="?action=list&expense_sort_by=name&expense_sort_dir=<?= ($expense_sort_by === 'name' && $expense_sort_dir === 'ASC') ? 'DESC' : 'ASC' ?>&expense_page=1" class="text-decoration-none text-dark">
+                                    Nama
+                                    <?php if ($expense_sort_by === 'name') : ?>
+                                        <?= $expense_sort_dir === 'ASC' ? ' &#9650;' : ' &#9660;' ?>
+                                    <?php endif; ?>
+                                </a>
+                            </th>
+                            <th scope="col" class="text-end">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (count($expense_categories) > 0) : ?>
+                            <?php foreach ($expense_categories as $category) : ?>
+                                <tr>
+                                    <td><?= htmlspecialchars($category['name']) ?></td>
+                                    <td class="text-end">
+                                        <button type="button" class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#editCategoryModal" 
+                                            data-id="<?= $category['id'] ?>" 
+                                            data-name="<?= htmlspecialchars($category['name']) ?>" 
+                                            data-type="expense">
+                                            <i class="fas fa-edit me-1"></i>Ubah
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#deleteConfirmModal" data-id="<?= $category['id'] ?>">
+                                            <i class="fas fa-trash me-1"></i>Hapus
+                                        </button>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php else : ?>
+                            <tr>
+                                <td colspan="2" class="text-center">Tidak ada kategori pengeluaran ditemukan.</td>
+                            </tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer d-flex justify-content-between align-items-center flex-wrap">
+                <nav class="mb-2 mb-md-0">
+                    <ul class="pagination mb-0">
+                        <li class="page-item <?= $expense_page <= 1 ? 'disabled' : '' ?>">
+                            <a class="page-link" href="?action=list&expense_page=<?= $expense_page - 1 ?>&expense_sort_by=<?= $expense_sort_by ?>&expense_sort_dir=<?= $expense_sort_dir ?>">Sebelumnya</a>
+                        </li>
+                        <?php for ($i = 1; $i <= $total_expense_pages; $i++) : ?>
+                            <li class="page-item <?= $i == $expense_page ? 'active' : '' ?>">
+                                <a class="page-link" href="?action=list&expense_page=<?= $i ?>&expense_sort_by=<?= $expense_sort_by ?>&expense_sort_dir=<?= $expense_sort_dir ?>"><?= $i ?></a>
+                            </li>
+                        <?php endfor; ?>
+                        <li class="page-item <?= $expense_page >= $total_expense_pages ? 'disabled' : '' ?>">
+                            <a class="page-link" href="?action=list&expense_page=<?= $expense_page + 1 ?>&expense_sort_by=<?= $expense_sort_by ?>&expense_sort_dir=<?= $expense_sort_dir ?>">Selanjutnya</a>
+                        </li>
+                    </ul>
+                </nav>
+                <form method="GET" action="categories.php" class="d-flex align-items-center">
+                    <input type="hidden" name="action" value="list">
+                    <input type="hidden" name="expense_sort_by" value="<?= $expense_sort_by ?>">
+                    <input type="hidden" name="expense_sort_dir" value="<?= $expense_sort_dir ?>">
+                    <label for="expense_jump_page" class="form-label me-2 mb-0">Lompat ke halaman:</label>
+                    <input type="number" id="expense_jump_page" name="expense_page" class="form-control text-center me-2" style="width: 80px;" min="1" max="<?= max(1, $total_expense_pages) ?>" value="<?= $expense_page ?>">
+                    <button type="submit" class="btn btn-sm btn-secondary">Go</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="addCategoryModal" tabindex="-1" aria-labelledby="addCategoryModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addCategoryModalLabel">Tambah Kategori Baru</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="categories.php?action=add" method="post">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="add_category_name" class="form-label">Nama Kategori</label>
+                        <input type="text" class="form-control" id="add_category_name" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="add_category_type" class="form-label">Jenis</label>
+                        <select class="form-select" id="add_category_type" name="type" required>
+                            <option value="" disabled selected hidden>Pilih jenis</option>
+                            <option value="income">Pemasukan</option>
+                            <option value="expense">Pengeluaran</option>
+                        </select>
+                    </div>
                 </div>
-                <div class="mb-3">
-                    <label for="type" class="form-label">Type</label>
-                    <select class="form-select" id="type" name="type" required>
-                        <option value="">Select a type</option>
-                        <option value="income" <?= ($current_category && $current_category['type'] == 'income') ? 'selected' : '' ?>>Income</option>
-                        <option value="expense" <?= ($current_category && $current_category['type'] == 'expense') ? 'selected' : '' ?>>Expense</option>
-                    </select>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-primary">Simpan Kategori</button>
                 </div>
-                <button type="submit" class="btn btn-primary">Save Category</button>
-                <a href="categories.php" class="btn btn-secondary">Cancel</a>
             </form>
         </div>
     </div>
+</div>
 
-<?php else : // Default list view ?>
-
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="dashboard-title">Manage Categories</h1>
-        <a href="categories.php?action=add" class="btn btn-primary"><i class="fas fa-plus-circle me-2"></i>Add New Category</a>
-    </div>
-    
-    <?php if ($error) : ?>
-        <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
-    <?php endif; ?>
-    <?php if ($success) : ?>
-        <div class="alert alert-success"><?= htmlspecialchars($success) ?></div>
-    <?php endif; ?>
-
-    <div class="card shadow-sm">
-        <div class="card-body">
-            <table class="table table-hover">
-                <thead class="table-light">
-                    <tr>
-                        <th scope="col">Name</th>
-                        <th scope="col">Type</th>
-                        <th scope="col" class="text-end">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php
-                    // Fetch all categories for the current user
-                    $stmt = $pdo->prepare("SELECT id, name, type FROM categories WHERE user_id = ? ORDER BY type, name");
-                    $stmt->execute([$user_id]);
-                    $categories = $stmt->fetchAll();
-
-                    if (count($categories) > 0) :
-                        foreach ($categories as $category) :
-                    ?>
-                            <tr>
-                                <td><?= htmlspecialchars($category['name']) ?></td>
-                                <td>
-                                    <span class="badge rounded-pill <?= $category['type'] == 'income' ? 'bg-success' : 'bg-danger' ?>">
-                                        <?= ucfirst($category['type']) ?>
-                                    </span>
-                                </td>
-                                <td class="text-end">
-                                    <a href="categories.php?action=edit&id=<?= $category['id'] ?>" class="btn btn-sm btn-warning">
-                                        <i class="fas fa-edit me-1"></i>Edit
-                                    </a>
-                                    <a href="categories.php?action=delete&id=<?= $category['id'] ?>" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete this category? This might affect existing transactions.')">
-                                        <i class="fas fa-trash me-1"></i>Delete
-                                    </a>
-                                </td>
-                            </tr>
-                        <?php
-                        endforeach;
-                    else :
-                        ?>
-                        <tr>
-                            <td colspan="3" class="text-center">No categories found. Click 'Add New Category' to start.</td>
-                        </tr>
-                    <?php endif; ?>
-                </tbody>
-            </table>
+<div class="modal fade" id="editCategoryModal" tabindex="-1" aria-labelledby="editCategoryModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editCategoryModalLabel">Ubah Kategori</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="editCategoryForm" method="post">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="modal_category_name" class="form-label">Nama Kategori</label>
+                        <input type="text" class="form-control" id="modal_category_name" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="modal_category_type" class="form-label">Jenis</label>
+                        <select class="form-select" id="modal_category_type" name="type" required>
+                            <option value="" disabled selected hidden>Pilih jenis</option>
+                            <option value="income">Pemasukan</option>
+                            <option value="expense">Pengeluaran</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-primary">Simpan Perubahan</button>
+                </div>
+            </form>
         </div>
     </div>
+</div>
 
-<?php endif; ?>
+<div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-labelledby="deleteConfirmModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteConfirmModalLabel">Konfirmasi Hapus</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                Apakah Anda yakin ingin menghapus kategori ini? Tindakan ini tidak dapat dibatalkan dan mungkin memengaruhi transaksi terkait.
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <a href="#" id="deleteCategoryLink" class="btn btn-danger">Hapus</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const editCategoryModal = document.getElementById('editCategoryModal');
+    if (editCategoryModal) {
+        editCategoryModal.addEventListener('show.bs.modal', function (event) {
+            const button = event.relatedTarget;
+            const categoryId = button.getAttribute('data-id');
+            const categoryName = button.getAttribute('data-name');
+            const categoryType = button.getAttribute('data-type');
+
+            const modalTitle = editCategoryModal.querySelector('.modal-title');
+            const modalCategoryNameInput = editCategoryModal.querySelector('#modal_category_name');
+            const modalCategoryTypeSelect = editCategoryModal.querySelector('#modal_category_type');
+            const editForm = editCategoryModal.querySelector('#editCategoryForm');
+
+            modalTitle.textContent = 'Ubah Kategori: ' + categoryName;
+            modalCategoryNameInput.value = categoryName;
+            modalCategoryTypeSelect.value = categoryType;
+            editForm.action = 'categories.php?action=edit&id=' + categoryId;
+        });
+    }
+
+    const deleteConfirmModal = document.getElementById('deleteConfirmModal');
+    if (deleteConfirmModal) {
+        deleteConfirmModal.addEventListener('show.bs.modal', function (event) {
+            const button = event.relatedTarget;
+            const categoryId = button.getAttribute('data-id');
+            const deleteLink = deleteConfirmModal.querySelector('#deleteCategoryLink');
+            deleteLink.href = 'categories.php?action=delete&id=' + categoryId;
+        });
+    }
+});
+</script>
 
 <?php include '../includes/footer.php'; ?>
